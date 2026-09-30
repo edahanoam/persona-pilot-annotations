@@ -88,8 +88,8 @@ if position >= len(order):
 
 question = questions[order[position]]
 st.progress(position / len(order), text=f"Question {position + 1} of {len(order)}")
+st.subheader(question["description"])
 st.subheader(question["question"])
-st.caption(question["description"])
 
 with st.form(f"response-{question['id']}", clear_on_submit=True):
     answer = st.text_area(
