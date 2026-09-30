@@ -1,0 +1,28 @@
+[
+  {
+    "id": "work-style",
+    "question": "How do you prefer to approach a new and unfamiliar task?",
+    "description": "Describe what you usually do first, how you gather information, and how you decide that you are ready to begin."
+  },
+  {
+    "id": "decision-making",
+    "question": "Tell us about how you make a difficult decision.",
+    "description": "Consider the information you look for, the people you involve, and how you weigh competing priorities."
+  },
+  {
+    "id": "collaboration",
+    "question": "What does a productive collaboration look like to you?",
+    "description": "Describe the communication, roles, and working conditions that help you contribute your best work."
+  },
+  {
+    "id": "feedback",
+    "question": "How do you like to receive feedback?",
+    "description": "Explain what makes feedback useful to you and how you tend to respond to it."
+  },
+  {
+    "id": "motivation",
+    "question": "What helps you stay motivated on a long project?",
+    "description": "Think about goals, routines, milestones, people, or other factors that help you maintain momentum."
+  }
+]
+
