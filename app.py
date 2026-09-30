@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import random
-import uuid
 
 import streamlit as st
 
@@ -17,7 +16,7 @@ st.set_page_config(
 
 def initialize_session(question_count: int) -> None:
     if "participant_id" not in st.session_state:
-        st.session_state.participant_id = str(uuid.uuid4())
+        st.session_state.participant_id = ""
     if "started" not in st.session_state:
         st.session_state.started = False
     if "question_order" not in st.session_state:
@@ -30,7 +29,7 @@ def initialize_session(question_count: int) -> None:
 def restart(question_count: int) -> None:
     order = list(range(question_count))
     random.SystemRandom().shuffle(order)
-    st.session_state.participant_id = str(uuid.uuid4())
+    st.session_state.participant_id = ""
     st.session_state.question_order = order
     st.session_state.position = 0
     st.session_state.started = False
@@ -70,9 +69,24 @@ if not st.session_state.started:
         3. Select **Submit answer** once you are satisfied with your response.
         """
     )
-    if st.button("Begin", type="primary", use_container_width=True):
-        st.session_state.started = True
-        st.rerun()
+    with st.form("participant-details"):
+        participant_id = st.text_input(
+            "Participant ID",
+            placeholder="Enter your assigned ID",
+            max_chars=100,
+        )
+        begin = st.form_submit_button(
+            "Begin", type="primary", use_container_width=True
+        )
+
+    if begin:
+        cleaned_id = participant_id.strip()
+        if not cleaned_id:
+            st.warning("Please enter your participant ID before beginning.")
+        else:
+            st.session_state.participant_id = cleaned_id
+            st.session_state.started = True
+            st.rerun()
     st.stop()
 
 position = st.session_state.position
@@ -118,4 +132,3 @@ if submitted:
         else:
             st.session_state.position += 1
             st.rerun()
-
