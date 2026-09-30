@@ -50,6 +50,28 @@ initialize_session(len(questions))
 
 st.title("Persona Pilot Annotations")
 
+if not st.session_state.participant_id:
+    st.subheader("Participant ID")
+    st.write("Enter your assigned participant ID to continue.")
+    with st.form("participant-details"):
+        participant_id = st.text_input(
+            "Participant ID",
+            placeholder="Enter your assigned ID",
+            max_chars=100,
+        )
+        begin = st.form_submit_button(
+            "Begin", type="primary", use_container_width=True
+        )
+
+    if begin:
+        cleaned_id = participant_id.strip()
+        if not cleaned_id:
+            st.warning("Please enter your participant ID before beginning.")
+        else:
+            st.session_state.participant_id = cleaned_id
+            st.rerun()
+    st.stop()
+
 if not st.session_state.started:
     st.subheader("Welcome")
     st.write(
@@ -69,24 +91,9 @@ if not st.session_state.started:
         3. Select **Submit answer** once you are satisfied with your response.
         """
     )
-    with st.form("participant-details"):
-        participant_id = st.text_input(
-            "Participant ID",
-            placeholder="Enter your assigned ID",
-            max_chars=100,
-        )
-        begin = st.form_submit_button(
-            "Begin", type="primary", use_container_width=True
-        )
-
-    if begin:
-        cleaned_id = participant_id.strip()
-        if not cleaned_id:
-            st.warning("Please enter your participant ID before beginning.")
-        else:
-            st.session_state.participant_id = cleaned_id
-            st.session_state.started = True
-            st.rerun()
+    if st.button("Begin", type="primary", use_container_width=True):
+        st.session_state.started = True
+        st.rerun()
     st.stop()
 
 position = st.session_state.position
