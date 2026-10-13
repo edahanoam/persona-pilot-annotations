@@ -1,2 +1,5 @@
 streamlit>=1.40,<2
-
+openai
+google-genai
+pandas
+scipy
