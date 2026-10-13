@@ -103,25 +103,32 @@ st.markdown("**Question:**")
 st.write("[question placeholder]")
 
 with st.form(f"response-{question['id']}", clear_on_submit=True):
-    answer = st.text_area(
+    scale_labels = {
+        1: "Strongly disagree",
+        2: "Disagree",
+        3: "Neither agree nor disagree",
+        4: "Agree",
+        5: "Strongly agree",
+    }
+    answer = st.radio(
         "Your answer",
-        height=180,
-        placeholder="Type your response here…",
+        options=list(scale_labels),
+        format_func=lambda value: f"{value} — {scale_labels[value]}",
+        index=None,
     )
     submitted = st.form_submit_button(
         "Submit answer", type="primary", use_container_width=True
     )
 
 if submitted:
-    cleaned_answer = answer.strip()
-    if not cleaned_answer:
-        st.warning("Please write an answer before submitting.")
+    if answer is None:
+        st.warning("Please select an answer before submitting.")
     else:
         try:
             save_response(
                 participant_id=st.session_state.participant_id,
                 question=question,
-                answer=cleaned_answer,
+                answer=str(answer),
                 sequence=position + 1,
             )
         except OSError as exc:
