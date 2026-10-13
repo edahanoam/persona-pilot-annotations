@@ -75,21 +75,8 @@ if not st.session_state.participant_id:
 if not st.session_state.started:
     st.subheader("Welcome")
     st.write(
-        "You will be shown a series of prompts. Read each description, write your "
-        "answer in the text box, and submit it before moving on."
-    )
-    st.info(
-        "Your answers are saved as you submit them. Please avoid including names, "
-        "contact details, or other sensitive personal information."
-    )
-    st.markdown(
-        """
-        **Instructions**
-
-        1. Answer in your own words.
-        2. Give enough detail for another person to understand your reasoning.
-        3. Select **Submit answer** once you are satisfied with your response.
-        """
+        "You will be given a persona description and a question. Answer as you "
+        "think the given persona would."
     )
     if st.button("Begin", type="primary", use_container_width=True):
         st.session_state.started = True
@@ -109,8 +96,11 @@ if position >= len(order):
 
 question = questions[order[position]]
 st.progress(position / len(order), text=f"Question {position + 1} of {len(order)}")
-st.subheader(question["description"])
-st.subheader(question["question"])
+st.write("Answer the following question as the persona.")
+st.markdown("**Persona:**")
+st.write("[persona placeholder]")
+st.markdown("**Question:**")
+st.write("[question placeholder]")
 
 with st.form(f"response-{question['id']}", clear_on_submit=True):
     answer = st.text_area(
