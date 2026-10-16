@@ -95,6 +95,7 @@ def main() -> None:
     if not args.keep_original:
         columns_to_keep = {
             "pid",
+            "persona_summary",
             "persona_demographics",
             "persona_demographics_and_qualitative",
         }
