@@ -221,10 +221,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main() -> None:
     try:
         from datasets import load_from_disk
-    except ImportError as exc:
-        raise SystemExit(
-            "Missing dependency. Install it with: pip install -r "
-            "requirements-personas.txt"
+    except ModuleNotFoundError as exc:
+        if exc.name == "datasets":
+            raise SystemExit(
+                "Missing dependency 'datasets'. Install it with: pip install -r "
+                "requirements-personas.txt"
+            ) from exc
+        raise RuntimeError(
+            f"The datasets package is installed, but one of its dependencies is "
+            f"missing: {exc.name!r}. Python executable: {__import__('sys').executable}"
         ) from exc
 
     args = parse_args()
