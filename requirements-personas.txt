@@ -1,3 +1,7 @@
 datasets>=3.0,<5
 openai
 google-genai
+pandas
+numpy
+scikit-learn
+matplotlib
