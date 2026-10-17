@@ -47,6 +47,11 @@ def save_response(
     answer: str,
     sequence: int,
     path: Path = RESULTS_PATH,
+    experiment: str | None = None,
+    persona_id: str | None = None,
+    sampling_strategy: str | None = None,
+    assignment_id: str | None = None,
+    choices: list[str] | None = None,
 ) -> dict[str, Any]:
     record: dict[str, Any] = {
         "response_id": str(uuid.uuid4()),
@@ -58,6 +63,16 @@ def save_response(
         "description": question["description"],
         "answer": answer,
     }
+    if experiment is not None:
+        record["experiment"] = experiment
+    if persona_id is not None:
+        record["persona_id"] = persona_id
+    if sampling_strategy is not None:
+        record["sampling_strategy"] = sampling_strategy
+    if assignment_id is not None:
+        record["assignment_id"] = assignment_id
+    if choices is not None:
+        record["choices"] = choices
     line = json.dumps(record, ensure_ascii=False) + "\n"
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -67,3 +82,31 @@ def save_response(
             handle.flush()
             os.fsync(handle.fileno())
     return record
+
+
+def load_completed_question_ids(
+    participant_id: str,
+    *,
+    experiment: str,
+    persona_id: str,
+    path: Path = RESULTS_PATH,
+) -> set[str]:
+    """Return saved question IDs so an interrupted survey can resume."""
+    if not path.exists():
+        return set()
+    completed: set[str] = set()
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                record.get("participant_id") == participant_id
+                and record.get("experiment") == experiment
+                and record.get("persona_id") == persona_id
+            ):
+                question_id = record.get("question_id")
+                if isinstance(question_id, str):
+                    completed.add(question_id)
+    return completed

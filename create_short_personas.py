@@ -27,6 +27,7 @@ QUALITATIVE_MARKER = (
 
 class ShortPersona(TypedDict):
     persona_demographics: str
+    persona_qualitative: str
     persona_demographics_and_qualitative: str
 
 
@@ -53,6 +54,7 @@ def create_short_versions(persona_summary: str) -> ShortPersona:
 
     return {
         "persona_demographics": demographics,
+        "persona_qualitative": qualitative,
         "persona_demographics_and_qualitative": (
             f"{demographics}\n\n{qualitative}"
         ),
@@ -117,6 +119,7 @@ def main() -> None:
             "pid",
             "persona_summary",
             "persona_demographics",
+            "persona_qualitative",
             "persona_demographics_and_qualitative",
         }
         dataset = dataset.remove_columns(
