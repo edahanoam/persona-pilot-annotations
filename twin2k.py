@@ -7,13 +7,14 @@ import os
 from pathlib import Path
 from typing import TypedDict
 
-from create_short_personas import QUALITATIVE_MARKER
+from create_short_personas import (
+    DATASET_CONFIG,
+    DATASET_NAME,
+    QUALITATIVE_MARKER,
+    create_short_versions,
+)
 from run_bfi44_inference import ANSWER_LABELS, BFI44_ITEMS
 from sampling import Sampler, StableHashSampler
-
-
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DATASET_PATH = BASE_DIR / "data" / "twin_2k_500_short_personas"
 
 
 class TwinPersona(TypedDict):
@@ -53,13 +54,53 @@ def _normalize_persona(row: dict[str, object]) -> TwinPersona:
     }
 
 
+def _load_huggingface_personas() -> list[TwinPersona]:
+    """Stream only the two columns needed from the public Hugging Face dataset."""
+    try:
+        from datasets import load_dataset
+    except ModuleNotFoundError as exc:
+        raise RuntimeError(
+            "Loading Twin-2K requires the 'datasets' package"
+        ) from exc
+
+    try:
+        dataset = load_dataset(
+            DATASET_NAME,
+            DATASET_CONFIG,
+            split="data",
+            streaming=True,
+        ).select_columns(["pid", "persona_summary"])
+        personas: list[TwinPersona] = []
+        for row in dataset:
+            shortened = create_short_versions(str(row["persona_summary"]))
+            personas.append(
+                _normalize_persona(
+                    {
+                        "pid": row["pid"],
+                        **shortened,
+                    }
+                )
+            )
+    except Exception as exc:
+        raise RuntimeError(
+            f"Could not load {DATASET_NAME} from Hugging Face: {exc}"
+        ) from exc
+    return personas
+
+
 def load_twin_personas(path: Path | None = None) -> list[TwinPersona]:
-    """Load a generated Hugging Face dataset directory or a JSONL export."""
+    """Load Twin-2K online, or use an explicitly configured local cache."""
     configured = os.environ.get("TWIN2K_DATASET_PATH")
-    source = path or (Path(configured) if configured else DEFAULT_DATASET_PATH)
+    if path is None and not configured:
+        personas = _load_huggingface_personas()
+        if not personas:
+            raise ValueError("The Twin-2K Hugging Face dataset is empty")
+        return personas
+
+    source = path or Path(configured)  # type: ignore[arg-type]
     if not source.exists():
         raise FileNotFoundError(
-            f"Twin-2K data was not found at {source}. Run create_short_personas.py first."
+            f"Configured Twin-2K data was not found at {source}"
         )
 
     if source.is_file():

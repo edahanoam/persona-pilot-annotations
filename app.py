@@ -31,7 +31,7 @@ def restart() -> None:
     st.rerun()
 
 
-@st.cache_data
+@st.cache_resource
 def get_twin_personas() -> list[dict[str, str]]:
     return list(load_twin_personas())
 
