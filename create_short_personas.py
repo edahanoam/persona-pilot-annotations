@@ -18,6 +18,7 @@ from typing import TypedDict
 DATASET_NAME = "LLM-Digital-Twin/Twin-2K-500"
 DATASET_CONFIG = "full_persona"
 BIG_FIVE_MARKER = "The person's Big 5 scores are the following:"
+BIG_FIVE_END_MARKER = "associated traits."
 QUALITATIVE_MARKER = (
     "The person also answered three purely qualitative questions about their "
     "concept of self"
@@ -58,6 +59,20 @@ def create_short_versions(persona_summary: str) -> ShortPersona:
     }
 
 
+def remove_bfi_aggregate_scores(persona_summary: str) -> str:
+    """Remove only the aggregate Big Five score block from a full summary."""
+    if not isinstance(persona_summary, str) or not persona_summary.strip():
+        raise ValueError("persona_summary must be a non-empty string")
+    block_start = _marker_index(persona_summary, BIG_FIVE_MARKER)
+    relative_end = _marker_index(
+        persona_summary[block_start:], BIG_FIVE_END_MARKER
+    )
+    block_end = block_start + relative_end + len(BIG_FIVE_END_MARKER)
+    before = persona_summary[:block_start].rstrip()
+    after = persona_summary[block_end:].lstrip()
+    return f"{before}\n\n{after}".strip()
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Create short persona variants from Twin-2K-500."
@@ -79,10 +94,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     try:
         from datasets import load_dataset
-    except ImportError as exc:
-        raise SystemExit(
-            "Missing dependency. Install it with: pip install -r "
-            "requirements-personas.txt"
+    except ModuleNotFoundError as exc:
+        if exc.name == "datasets":
+            raise SystemExit(
+                "Missing dependency 'datasets'. Install it with: pip install -r "
+                "requirements-personas.txt"
+            ) from exc
+        raise RuntimeError(
+            f"The datasets package is installed, but one of its dependencies is "
+            f"missing: {exc.name!r}. Python executable: {__import__('sys').executable}"
         ) from exc
 
     args = parse_args()

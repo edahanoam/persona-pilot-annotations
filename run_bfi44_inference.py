@@ -15,6 +15,7 @@ import time
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from create_short_personas import remove_bfi_aggregate_scores
 from generate_persona_responses import make_answer_function
 
 
@@ -77,6 +78,7 @@ VERSION_COLUMNS = {
     "d": "persona_demographics",
     "dm": "persona_demographics_and_qualitative",
     "full": "persona_summary",
+    "full_no_bfi": "persona_summary",
 }
 
 OUTPUT_COLUMNS = (
@@ -170,6 +172,8 @@ def run_inference(
         for persona_position, index in enumerate(indices, start=1):
             row = dataset[index]  # type: ignore[index]
             persona = row[persona_column]
+            if version == "full_no_bfi":
+                persona = remove_bfi_aggregate_scores(persona)
             for question_number, item in enumerate(BFI44_ITEMS, start=1):
                 value = answer_with_retries(
                     answer_question, build_bfi_prompt(persona, item)
@@ -206,7 +210,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "version",
         choices=tuple(VERSION_COLUMNS),
-        help="d=demographics, dm=demographics+qualitative, full=full summary",
+        help=(
+            "d=demographics, dm=demographics+qualitative, full=full summary, "
+            "full_no_bfi=full summary without aggregate Big Five scores"
+        ),
     )
     parser.add_argument(
         "--dataset-dir",

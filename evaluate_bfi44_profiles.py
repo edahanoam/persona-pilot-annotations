@@ -22,6 +22,7 @@ HF_HUMAN_FILE = (
     "question_catalog_and_human_response_csv/wave1_3_response.csv"
 )
 VERSIONS = ("full", "d", "dm")
+OPTIONAL_VERSIONS = ("full_no_bfi",)
 BFI_PREFIX = "QID25_"
 N_ITEMS = 44
 
@@ -133,8 +134,9 @@ def comparison_metrics(left: np.ndarray, right: np.ndarray) -> dict[str, float]:
 def make_comparison_reports(
     matrices: dict[str, pd.DataFrame], output_dir: Path
 ) -> pd.DataFrame:
-    pairs = [(version, "human") for version in VERSIONS]
-    pairs.extend(combinations(VERSIONS, 2))
+    model_sources = tuple(source for source in matrices if source != "human")
+    pairs = [(version, "human") for version in model_sources]
+    pairs.extend(combinations(model_sources, 2))
     summary_rows: list[dict[str, object]] = []
     person_rows: list[dict[str, object]] = []
     question_rows: list[dict[str, object]] = []
@@ -192,6 +194,7 @@ def make_comparison_reports(
 def save_aligned_answers(
     matrices: dict[str, pd.DataFrame], output_dir: Path
 ) -> None:
+    sources = tuple(matrices)
     rows: list[dict[str, object]] = []
     for pid in matrices["human"].index:
         for question_number in range(1, N_ITEMS + 1):
@@ -201,7 +204,7 @@ def save_aligned_answers(
                     "question_number": question_number,
                     **{
                         source: matrices[source].loc[pid, question_number]
-                        for source in ("human", *VERSIONS)
+                        for source in sources
                     },
                 }
             )
@@ -217,7 +220,8 @@ def run_pca(matrices: dict[str, pd.DataFrame], output_dir: Path) -> None:
 
     coordinate_rows: list[dict[str, object]] = []
     transformed: dict[str, np.ndarray] = {}
-    for source in ("human", *VERSIONS):
+    model_sources = tuple(source for source in matrices if source != "human")
+    for source in ("human", *model_sources):
         transformed[source] = pca.transform(matrices[source].to_numpy(dtype=float))
         for row_index, pid in enumerate(matrices[source].index):
             coordinate_rows.append(
@@ -248,16 +252,23 @@ def run_pca(matrices: dict[str, pd.DataFrame], output_dir: Path) -> None:
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
-    colors = {"human": "#111827", "full": "#2563eb", "d": "#dc2626", "dm": "#16a34a"}
+    colors = {
+        "human": "#111827",
+        "full": "#2563eb",
+        "full_no_bfi": "#9333ea",
+        "d": "#dc2626",
+        "dm": "#16a34a",
+    }
     labels = {
         "human": "Human",
         "full": "Full profile",
+        "full_no_bfi": "Full summary without BFI scores",
         "d": "Demographics",
         "dm": "Demographics + qualitative",
     }
     figure, axis = plt.subplots(figsize=(10, 8))
     human_xy = transformed["human"][:, :2]
-    for source in VERSIONS:
+    for source in model_sources:
         model_xy = transformed[source][:, :2]
         for human_point, model_point in zip(human_xy, model_xy):
             axis.plot(
@@ -267,7 +278,7 @@ def run_pca(matrices: dict[str, pd.DataFrame], output_dir: Path) -> None:
                 alpha=0.10,
                 linewidth=0.7,
             )
-    for source in ("human", *VERSIONS):
+    for source in ("human", *model_sources):
         points = transformed[source]
         axis.scatter(
             points[:, 0],
@@ -306,6 +317,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--d", type=Path, required=True)
     parser.add_argument("--dm", type=Path, required=True)
     parser.add_argument(
+        "--full-no-bfi",
+        dest="full_no_bfi",
+        type=Path,
+        help="Optional full-summary inference with aggregate BFI scores removed.",
+    )
+    parser.add_argument(
         "--human-csv",
         type=Path,
         help="Local wave1_3_response.csv; downloaded from Hugging Face if omitted.",
@@ -321,6 +338,10 @@ def main() -> None:
         version: load_model_answers(getattr(args, version), version)
         for version in VERSIONS
     }
+    for version in OPTIONAL_VERSIONS:
+        path = getattr(args, version)
+        if path is not None:
+            model_matrices[version] = load_model_answers(path, version)
     human_path = args.human_csv or download_human_csv()
     human = load_human_answers(human_path)
 
@@ -330,7 +351,7 @@ def main() -> None:
     ordered_pids = sorted(common_pids, key=lambda pid: (not pid.isdigit(), int(pid) if pid.isdigit() else pid))
     if len(ordered_pids) < 2:
         raise ValueError(
-            f"Only {len(ordered_pids)} participants are shared across human/full/d/dm"
+            f"Only {len(ordered_pids)} participants are shared across all inputs"
         )
 
     matrices = {"human": human.loc[ordered_pids]}
@@ -355,7 +376,7 @@ def main() -> None:
             "input_personas": len(model_matrices[version]),
             "aligned_personas": len(ordered_pids),
         }
-        for version in VERSIONS
+        for version in model_matrices
     )
     pd.DataFrame(coverage_rows).to_csv(args.output_dir / "coverage.csv", index=False)
 
