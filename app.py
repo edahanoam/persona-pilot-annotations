@@ -3,7 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from opinionqa import assign_opinion_question, load_opinion_assignments
-from storage import load_completed_question_ids, save_response
+from storage import StorageError, load_completed_question_ids, save_response
 from twin2k import assign_persona, bfi44_questions, load_twin_personas
 
 
@@ -52,11 +52,15 @@ def show_twin2k() -> None:
         st.session_state.participant_id, personas  # type: ignore[arg-type]
     )
     questions = bfi44_questions()
-    completed = load_completed_question_ids(
-        st.session_state.participant_id,
-        experiment="twin2k",
-        persona_id=persona["persona_id"],
-    )
+    try:
+        completed = load_completed_question_ids(
+            st.session_state.participant_id,
+            experiment="twin2k",
+            persona_id=persona["persona_id"],
+        )
+    except StorageError as exc:
+        st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
+        st.stop()
 
     if completed and st.session_state.stage != "complete":
         st.session_state.stage = "bfi44"
@@ -136,8 +140,9 @@ def show_twin2k() -> None:
                     experiment="twin2k",
                     persona_id=persona["persona_id"],
                     sampling_strategy=sampling_strategy,
+                    choices=[choices[value] for value in choices],  # type: ignore[index]
                 )
-            except OSError as exc:
+            except (OSError, StorageError) as exc:
                 st.error(f"Your answer could not be saved. Please try again. ({exc})")
             else:
                 st.rerun()
@@ -153,11 +158,15 @@ def show_opinionqa() -> None:
     assignment, sampling_strategy = assign_opinion_question(
         st.session_state.participant_id, assignments  # type: ignore[arg-type]
     )
-    completed = load_completed_question_ids(
-        st.session_state.participant_id,
-        experiment="opinionqa",
-        persona_id=assignment["persona_id"],
-    )
+    try:
+        completed = load_completed_question_ids(
+            st.session_state.participant_id,
+            experiment="opinionqa",
+            persona_id=assignment["persona_id"],
+        )
+    except StorageError as exc:
+        st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
+        st.stop()
 
     if assignment["question_id"] in completed:
         st.success("Thank you — you have completed your question.")
@@ -215,7 +224,7 @@ def show_opinionqa() -> None:
                     assignment_id=assignment["assignment_id"],
                     choices=list(choices),
                 )
-            except OSError as exc:
+            except (OSError, StorageError) as exc:
                 st.error(f"Your answer could not be saved. Please try again. ({exc})")
             else:
                 st.rerun()

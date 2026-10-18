@@ -4,6 +4,7 @@ import json
 import os
 import threading
 import uuid
+from functools import lru_cache
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,45 @@ BASE_DIR = Path(__file__).resolve().parent
 QUESTIONS_PATH = BASE_DIR / "questions.json"
 RESULTS_PATH = Path(os.environ.get("RESULTS_PATH", BASE_DIR / "data" / "responses.jsonl"))
 _write_lock = threading.Lock()
+
+
+class StorageError(RuntimeError):
+    """Raised when persistent response storage is unavailable."""
+
+
+def _supabase_settings() -> tuple[str, str] | None:
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    key = os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+    try:
+        import streamlit as st
+
+        section = st.secrets.get("supabase", {})
+        url = str(section.get("url", url)).strip()
+        key = str(section.get("secret_key", key)).strip()
+    except Exception:
+        pass
+
+    if bool(url) != bool(key):
+        raise StorageError(
+            "Supabase storage is only partially configured. Both url and "
+            "secret_key are required."
+        )
+    return (url, key) if url and key else None
+
+
+@lru_cache(maxsize=1)
+def _supabase_client(url: str, key: str) -> Any:
+    try:
+        from supabase import create_client
+    except ModuleNotFoundError as exc:
+        raise StorageError(
+            "Supabase storage is configured, but the 'supabase' package is missing"
+        ) from exc
+    return create_client(url, key)
+
+
+def storage_backend_name() -> str:
+    return "supabase" if _supabase_settings() else "jsonl"
 
 
 def load_questions(path: Path = QUESTIONS_PATH) -> list[dict[str, str]]:
@@ -53,8 +93,18 @@ def save_response(
     assignment_id: str | None = None,
     choices: list[str] | None = None,
 ) -> dict[str, Any]:
+    response_id = (
+        str(
+            uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"persona-pilot:{participant_id}:{experiment}:{persona_id}:{question['id']}",
+            )
+        )
+        if experiment and persona_id
+        else str(uuid.uuid4())
+    )
     record: dict[str, Any] = {
-        "response_id": str(uuid.uuid4()),
+        "response_id": response_id,
         "participant_id": participant_id,
         "submitted_at": datetime.now(timezone.utc).isoformat(),
         "sequence": sequence,
@@ -73,6 +123,23 @@ def save_response(
         record["assignment_id"] = assignment_id
     if choices is not None:
         record["choices"] = choices
+
+    settings = _supabase_settings() if path == RESULTS_PATH else None
+    if settings:
+        try:
+            (
+                _supabase_client(*settings)
+                .table("responses")
+                .upsert(
+                    record,
+                    on_conflict="participant_id,experiment,persona_id,question_id",
+                )
+                .execute()
+            )
+        except Exception as exc:
+            raise StorageError(f"Supabase could not save the response: {exc}") from exc
+        return record
+
     line = json.dumps(record, ensure_ascii=False) + "\n"
 
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -92,6 +159,26 @@ def load_completed_question_ids(
     path: Path = RESULTS_PATH,
 ) -> set[str]:
     """Return saved question IDs so an interrupted survey can resume."""
+    settings = _supabase_settings() if path == RESULTS_PATH else None
+    if settings:
+        try:
+            result = (
+                _supabase_client(*settings)
+                .table("responses")
+                .select("question_id")
+                .eq("participant_id", participant_id)
+                .eq("experiment", experiment)
+                .eq("persona_id", persona_id)
+                .execute()
+            )
+        except Exception as exc:
+            raise StorageError(f"Supabase could not load survey progress: {exc}") from exc
+        return {
+            row["question_id"]
+            for row in (result.data or [])
+            if isinstance(row.get("question_id"), str)
+        }
+
     if not path.exists():
         return set()
     completed: set[str] = set()
