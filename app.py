@@ -75,16 +75,14 @@ def show_twin2k() -> None:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
         st.stop()
 
-    show_answering_instruction()
-
     if completed and st.session_state.stage != "complete":
         st.session_state.stage = "bfi44"
 
     if st.session_state.stage == "welcome":
         st.subheader("Welcome")
         st.write(
-            "You will first read a persona in two parts. You will then answer "
-            "44 statements as you think that person would answer them."
+            "You will first read a persona description and then answer personality "
+            "questions from that person's point of view."
         )
         if st.button("Begin", type="primary", use_container_width=True):
             st.session_state.stage = "demographics"
@@ -98,7 +96,7 @@ def show_twin2k() -> None:
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
         st.markdown("**This person answered these three questions about themselves**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
-        if st.button("Begin the BFI-44", type="primary", use_container_width=True):
+        if st.button("Begin answering", type="primary", use_container_width=True):
             st.session_state.stage = "bfi44"
             st.rerun()
         return
@@ -115,7 +113,7 @@ def show_twin2k() -> None:
     question = unanswered[0]
     position = len(completed) + 1
     st.progress(position / len(questions), text=f"Question {position} of {len(questions)}")
-    st.write("Answer as you think the persona would answer.")
+    show_answering_instruction()
     with st.expander("Review the full persona", expanded=position == 1):
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
@@ -179,8 +177,6 @@ def show_opinionqa() -> None:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
         st.stop()
 
-    show_answering_instruction()
-
     unanswered = [
         assignment
         for assignment in assigned_questions
@@ -196,8 +192,8 @@ def show_opinionqa() -> None:
     if st.session_state.stage == "welcome":
         st.subheader("Welcome")
         st.write(
-            "You will be given 10 persona and survey-question pairs. For each "
-            "question, answer as you think the person described would answer."
+            "You will be presented with a persona description and a question. "
+            "Answer the question as you think that person would answer."
         )
         if st.button("Begin", type="primary", use_container_width=True):
             st.session_state.stage = "opinion_question"
@@ -210,6 +206,7 @@ def show_opinionqa() -> None:
         position / len(assigned_questions),
         text=f"Question {position} of {len(assigned_questions)}",
     )
+    show_answering_instruction()
     st.markdown("**Persona:**")
     st.markdown(demographics_box(assignment["persona"]), unsafe_allow_html=True)
     st.markdown("**Question:**")
