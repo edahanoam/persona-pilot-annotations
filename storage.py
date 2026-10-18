@@ -197,3 +197,47 @@ def load_completed_question_ids(
                 if isinstance(question_id, str):
                     completed.add(question_id)
     return completed
+
+
+def load_completed_assignment_ids(
+    participant_id: str,
+    *,
+    experiment: str,
+    path: Path = RESULTS_PATH,
+) -> set[str]:
+    """Return assignment IDs completed by a participant in one experiment."""
+    settings = _supabase_settings() if path == RESULTS_PATH else None
+    if settings:
+        try:
+            result = (
+                _supabase_client(*settings)
+                .table("responses")
+                .select("assignment_id")
+                .eq("participant_id", participant_id)
+                .eq("experiment", experiment)
+                .execute()
+            )
+        except Exception as exc:
+            raise StorageError(f"Supabase could not load survey progress: {exc}") from exc
+        return {
+            row["assignment_id"]
+            for row in (result.data or [])
+            if isinstance(row.get("assignment_id"), str)
+        }
+
+    if not path.exists():
+        return set()
+    completed: set[str] = set()
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if (
+                record.get("participant_id") == participant_id
+                and record.get("experiment") == experiment
+                and isinstance(record.get("assignment_id"), str)
+            ):
+                completed.add(record["assignment_id"])
+    return completed

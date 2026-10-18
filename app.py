@@ -2,8 +2,13 @@ from __future__ import annotations
 
 import streamlit as st
 
-from opinionqa import assign_opinion_question, load_opinion_assignments
-from storage import StorageError, load_completed_question_ids, save_response
+from opinionqa import assign_opinion_questions, load_opinion_assignments
+from storage import (
+    StorageError,
+    load_completed_assignment_ids,
+    load_completed_question_ids,
+    save_response,
+)
 from twin2k import assign_persona, bfi44_questions, load_twin_personas
 
 
@@ -155,22 +160,28 @@ def show_opinionqa() -> None:
         st.error(f"The OpinionQA sample could not be loaded: {exc}")
         st.stop()
 
-    assignment, sampling_strategy = assign_opinion_question(
-        st.session_state.participant_id, assignments  # type: ignore[arg-type]
+    assigned_questions, sampling_strategy = assign_opinion_questions(
+        st.session_state.participant_id,
+        assignments,  # type: ignore[arg-type]
+        question_count=10,
     )
     try:
-        completed = load_completed_question_ids(
+        completed = load_completed_assignment_ids(
             st.session_state.participant_id,
             experiment="opinionqa",
-            persona_id=assignment["persona_id"],
         )
     except StorageError as exc:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
         st.stop()
 
-    if assignment["question_id"] in completed:
-        st.success("Thank you — you have completed your question.")
-        st.write("Your response has been saved.")
+    unanswered = [
+        assignment
+        for assignment in assigned_questions
+        if assignment["assignment_id"] not in completed
+    ]
+    if not unanswered:
+        st.success("Thank you — you have completed all 10 questions.")
+        st.write("Your responses have been saved.")
         if st.button("Start a new response session", use_container_width=True):
             restart()
         return
@@ -178,15 +189,20 @@ def show_opinionqa() -> None:
     if st.session_state.stage == "welcome":
         st.subheader("Welcome")
         st.write(
-            "You will be given a persona and one survey question. Answer as you "
-            "think the person described would answer."
+            "You will be given 10 persona and survey-question pairs. For each "
+            "question, answer as you think the person described would answer."
         )
         if st.button("Begin", type="primary", use_container_width=True):
             st.session_state.stage = "opinion_question"
             st.rerun()
         return
 
-    st.progress(0.0, text="OpinionQA question")
+    assignment = unanswered[0]
+    position = len(assigned_questions) - len(unanswered) + 1
+    st.progress(
+        position / len(assigned_questions),
+        text=f"Question {position} of {len(assigned_questions)}",
+    )
     st.markdown("**Persona:**")
     st.write(assignment["persona"])
     st.markdown("**Question:**")
@@ -217,7 +233,7 @@ def show_opinionqa() -> None:
                     participant_id=st.session_state.participant_id,
                     question=question,
                     answer=str(answer),
-                    sequence=1,
+                    sequence=position,
                     experiment="opinionqa",
                     persona_id=assignment["persona_id"],
                     sampling_strategy=sampling_strategy,

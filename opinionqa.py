@@ -102,3 +102,32 @@ def assign_opinion_question(
 ) -> tuple[OpinionAssignment, str]:
     policy = sampler or StableHashSampler()
     return assignments[policy.choose_index(participant_id, len(assignments))], policy.name
+
+
+def assign_opinion_questions(
+    participant_id: str,
+    assignments: list[OpinionAssignment],
+    question_count: int = 10,
+    sampler: Sampler | None = None,
+) -> tuple[list[OpinionAssignment], str]:
+    """Assign distinct questions while preserving each question's paired persona."""
+    if question_count < 1:
+        raise ValueError("question_count must be at least 1")
+    policy = sampler or StableHashSampler()
+    ordered_indices = policy.choose_indices(
+        participant_id, len(assignments), len(assignments)
+    )
+    selected: list[OpinionAssignment] = []
+    seen_question_ids: set[str] = set()
+    for index in ordered_indices:
+        assignment = assignments[index]
+        if assignment["question_id"] in seen_question_ids:
+            continue
+        selected.append(assignment)
+        seen_question_ids.add(assignment["question_id"])
+        if len(selected) == question_count:
+            return selected, policy.name
+    raise ValueError(
+        f"Only {len(selected)} distinct OpinionQA questions are available; "
+        f"cannot assign {question_count}"
+    )
