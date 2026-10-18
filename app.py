@@ -37,11 +37,15 @@ def restart() -> None:
     st.rerun()
 
 
-def show_answering_instruction() -> None:
-    st.info(
+def show_answering_instruction(*, green: bool = False) -> None:
+    message = (
         "**Instructions:** Answer each question as you think the person described "
         "in the persona would answer. Do not answer as yourself."
     )
+    if green:
+        st.success(message)
+    else:
+        st.info(message)
 
 
 @st.cache_resource
@@ -113,7 +117,7 @@ def show_twin2k() -> None:
     question = unanswered[0]
     position = len(completed) + 1
     st.progress(position / len(questions), text=f"Question {position} of {len(questions)}")
-    show_answering_instruction()
+    show_answering_instruction(green=True)
     with st.expander("Review the full persona", expanded=position == 1):
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
