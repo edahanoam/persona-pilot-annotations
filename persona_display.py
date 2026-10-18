@@ -13,10 +13,28 @@ DEMOGRAPHIC_INTRO_LINES = {
     "persona demographics",
 }
 
+DEMOGRAPHIC_LABELS = {
+    "CREGION": "Region",
+    "AGE": "Age",
+    "SEX": "Sex",
+    "EDUCATION": "Education",
+    "CITIZEN": "Citizenship",
+    "MARITAL": "Marital status",
+    "RELIG": "Religion",
+    "RELIGATTEND": "Religious service attendance",
+    "POLPARTY": "Political party",
+    "INCOME": "Income",
+    "POLIDEOLOGY": "Political ideology",
+    "RACE": "Race",
+}
+
 
 def demographic_items(text: str) -> list[str]:
     """Return one clean display item per demographic field."""
-    raw_parts = re.split(r"[\r\n]+|\s*•\s*", text)
+    raw_parts = re.split(
+        r"[\r\n]+|\s*•\s*|,\s*(?=[A-Z][A-Z0-9_]*\s*:)",
+        text,
+    )
     items: list[str] = []
     for part in raw_parts:
         cleaned = part.strip().lstrip("-*• ").strip()
@@ -63,8 +81,10 @@ def demographics_box(text: str) -> str:
     for item in demographic_items(text):
         if ":" in item:
             label, value = item.split(":", 1)
+            label = label.strip()
+            display_label = DEMOGRAPHIC_LABELS.get(label.upper(), label)
             content = (
-                f"<strong>{html.escape(label.strip())}:</strong> "
+                f"<strong>{html.escape(display_label)}:</strong> "
                 f"{html.escape(value.strip())}"
             )
         else:

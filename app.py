@@ -87,7 +87,7 @@ def show_twin2k() -> None:
         st.subheader("Persona")
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**Qualitative responses**")
+        st.markdown("**This person answered these three questions about themselves**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
         if st.button("Begin the BFI-44", type="primary", use_container_width=True):
             st.session_state.stage = "bfi44"
@@ -110,7 +110,7 @@ def show_twin2k() -> None:
     with st.expander("Review the full persona", expanded=position == 1):
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**This person answers these 3 questions about himself**")
+        st.markdown("**This person answered these three questions about themselves**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
     st.markdown("**I see myself as someone who…**")
     item = str(question["question"])
@@ -200,7 +200,7 @@ def show_opinionqa() -> None:
         text=f"Question {position} of {len(assigned_questions)}",
     )
     st.markdown("**Persona:**")
-    st.write(assignment["persona"])
+    st.markdown(demographics_box(assignment["persona"]), unsafe_allow_html=True)
     st.markdown("**Question:**")
     st.write(assignment["question"])
 
