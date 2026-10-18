@@ -3,6 +3,7 @@ from __future__ import annotations
 import streamlit as st
 
 from opinionqa import assign_opinion_questions, load_opinion_assignments
+from persona_display import demographics_box, qualitative_box
 from storage import (
     StorageError,
     load_completed_assignment_ids,
@@ -84,7 +85,7 @@ def show_twin2k() -> None:
     if st.session_state.stage == "demographics":
         st.progress(0.0, text="Persona information: demographics")
         st.subheader("Part 1: Demographics")
-        st.write(persona["demographics"])
+        st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
         if st.button(
             "Continue to qualitative responses", type="primary", use_container_width=True
         ):
@@ -95,7 +96,7 @@ def show_twin2k() -> None:
     if st.session_state.stage == "qualitative":
         st.progress(0.0, text="Persona information: qualitative responses")
         st.subheader("Part 2: Qualitative responses")
-        st.write(persona["qualitative"])
+        st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
         if st.button("Begin the BFI-44", type="primary", use_container_width=True):
             st.session_state.stage = "bfi44"
             st.rerun()
@@ -115,7 +116,10 @@ def show_twin2k() -> None:
     st.progress(position / len(questions), text=f"Question {position} of {len(questions)}")
     st.write("Answer as you think the persona would answer.")
     with st.expander("Review the full persona", expanded=position == 1):
-        st.write(persona["combined"])
+        st.markdown("**Demographics**")
+        st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
+        st.markdown("**Qualitative responses**")
+        st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
     st.markdown("**I see myself as someone who…**")
     item = str(question["question"])
     st.write(item[0].lower() + item[1:])
