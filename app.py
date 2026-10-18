@@ -82,20 +82,12 @@ def show_twin2k() -> None:
             st.rerun()
         return
 
-    if st.session_state.stage == "demographics":
-        st.progress(0.0, text="Persona information: demographics")
-        st.subheader("Part 1: Demographics")
+    if st.session_state.stage in ("demographics", "qualitative"):
+        st.progress(0.0, text="Persona information")
+        st.subheader("Persona")
+        st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        if st.button(
-            "Continue to qualitative responses", type="primary", use_container_width=True
-        ):
-            st.session_state.stage = "qualitative"
-            st.rerun()
-        return
-
-    if st.session_state.stage == "qualitative":
-        st.progress(0.0, text="Persona information: qualitative responses")
-        st.subheader("Part 2: Qualitative responses")
+        st.markdown("**Qualitative responses**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
         if st.button("Begin the BFI-44", type="primary", use_container_width=True):
             st.session_state.stage = "bfi44"

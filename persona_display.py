@@ -59,10 +59,20 @@ def qualitative_items(text: str) -> list[tuple[str, str]]:
 
 
 def demographics_box(text: str) -> str:
-    lines = "".join(
-        f'<div style="margin:0.35rem 0;">{html.escape(item)}</div>'
-        for item in demographic_items(text)
-    )
+    rendered_lines: list[str] = []
+    for item in demographic_items(text):
+        if ":" in item:
+            label, value = item.split(":", 1)
+            content = (
+                f"<strong>{html.escape(label.strip())}:</strong> "
+                f"{html.escape(value.strip())}"
+            )
+        else:
+            content = html.escape(item)
+        rendered_lines.append(
+            f'<div style="margin:0.35rem 0;">{content}</div>'
+        )
+    lines = "".join(rendered_lines)
     return (
         '<div style="background:#eaf4ff;border:1px solid #a9cfee;'
         'border-radius:12px;padding:0.9rem 1.1rem;color:#17324d;">'
