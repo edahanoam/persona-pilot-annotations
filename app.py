@@ -210,7 +210,7 @@ def show_opinionqa() -> None:
         position / len(assigned_questions),
         text=f"Question {position} of {len(assigned_questions)}",
     )
-    show_answering_instruction()
+    show_answering_instruction(green=True)
     st.markdown("**Persona:**")
     st.markdown(demographics_box(assignment["persona"]), unsafe_allow_html=True)
     st.markdown("**Question:**")
