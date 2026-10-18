@@ -110,7 +110,7 @@ def show_twin2k() -> None:
     with st.expander("Review the full persona", expanded=position == 1):
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**Qualitative responses**")
+        st.markdown("**This person answers these 3 questions about himself**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
     st.markdown("**I see myself as someone who…**")
     item = str(question["question"])
