@@ -37,6 +37,13 @@ def restart() -> None:
     st.rerun()
 
 
+def show_answering_instruction() -> None:
+    st.info(
+        "**Instructions:** Answer each question as you think the person described "
+        "in the persona would answer. Do not answer as yourself."
+    )
+
+
 @st.cache_resource
 def get_twin_personas() -> list[dict[str, str]]:
     return list(load_twin_personas())
@@ -67,6 +74,8 @@ def show_twin2k() -> None:
     except StorageError as exc:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
         st.stop()
+
+    show_answering_instruction()
 
     if completed and st.session_state.stage != "complete":
         st.session_state.stage = "bfi44"
@@ -169,6 +178,8 @@ def show_opinionqa() -> None:
     except StorageError as exc:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
         st.stop()
+
+    show_answering_instruction()
 
     unanswered = [
         assignment
