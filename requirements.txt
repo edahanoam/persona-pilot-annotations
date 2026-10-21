@@ -3,5 +3,7 @@ openai
 google-genai
 pandas
 scipy
+scikit-learn
+matplotlib
 datasets>=3.0,<5
 supabase>=2,<3
