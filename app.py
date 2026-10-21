@@ -11,6 +11,7 @@ from storage import (
     save_response,
 )
 from twin2k import (
+    PILOT_BFI44_NUMBERS,
     PersonaCondition,
     TwinPersona,
     assign_persona_rounds,
@@ -85,7 +86,8 @@ def show_twin2k() -> None:
     rounds, sampling_strategy = assign_persona_rounds(
         st.session_state.participant_id, personas  # type: ignore[arg-type]
     )
-    questions = bfi44_questions()
+    questions = bfi44_questions(PILOT_BFI44_NUMBERS)
+    required_question_ids = {str(question["id"]) for question in questions}
 
     if st.session_state.stage == "welcome":
         st.subheader("Welcome")
@@ -108,6 +110,7 @@ def show_twin2k() -> None:
                     experiment="twin2k",
                     persona_id=round_["persona"]["persona_id"],
                 )
+                & required_question_ids
             )
     except StorageError as exc:
         st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
@@ -141,7 +144,7 @@ def show_twin2k() -> None:
             text=f"Persona {active_round_index + 1} of {len(rounds)}",
         )
         st.subheader(f"Meet persona {active_round_index + 1}")
-        st.info(
+        st.success(
             "This is a new person. Read this persona definition carefully before "
             "continuing. Your answers should describe this person only."
         )
@@ -174,13 +177,13 @@ def show_twin2k() -> None:
     answers: dict[str, object] = {}
     with st.form("twin2k-questionnaire"):
         for question in unanswered:
-            number = int(question["number"])
+            display_number = int(question["display_number"])
             item = str(question["question"])
             choices = question["choices"]
-            st.markdown(f"**{number}. I see myself as someone who…**")
+            st.markdown(f"**{display_number}. I see myself as someone who…**")
             st.write(item[0].lower() + item[1:])
             answers[str(question["id"])] = st.radio(
-                f"Answer for question {number}",
+                f"Answer for question {display_number}",
                 options=list(choices),  # type: ignore[arg-type]
                 format_func=lambda value, labels=choices: f"{value} — {labels[value]}",  # type: ignore[index]
                 index=None,
@@ -195,7 +198,7 @@ def show_twin2k() -> None:
 
     if submitted:
         missing = [
-            int(question["number"])
+            int(question["display_number"])
             for question in unanswered
             if answers[str(question["id"])] is None
         ]
@@ -214,7 +217,7 @@ def show_twin2k() -> None:
                         question=question,  # type: ignore[arg-type]
                         answer=str(answers[str(question["id"])]),
                         sequence=(active_round_index * len(questions))
-                        + int(question["number"]),
+                        + int(question["display_number"]),
                         experiment="twin2k",
                         persona_id=persona["persona_id"],
                         sampling_strategy=sampling_strategy,

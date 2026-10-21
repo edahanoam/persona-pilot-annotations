@@ -26,6 +26,29 @@ class TwinPersona(TypedDict):
 
 PersonaCondition = Literal["demographics", "combined", "qualitative"]
 
+PILOT_BFI44_NUMBERS = (
+    1,
+    5,
+    8,
+    9,
+    10,
+    11,
+    12,
+    17,
+    18,
+    19,
+    21,
+    23,
+    24,
+    25,
+    28,
+    32,
+    34,
+    36,
+    37,
+    40,
+)
+
 
 class PersonaRound(TypedDict):
     persona: TwinPersona
@@ -162,8 +185,10 @@ def assign_persona_rounds(
     return rounds, policy.name
 
 
-def bfi44_questions() -> list[dict[str, object]]:
-    return [
+def bfi44_questions(
+    selected_numbers: tuple[int, ...] | None = None,
+) -> list[dict[str, object]]:
+    questions = [
         {
             "id": f"bfi44_{number:02d}",
             "number": number,
@@ -173,3 +198,16 @@ def bfi44_questions() -> list[dict[str, object]]:
         }
         for number, item in enumerate(BFI44_ITEMS, start=1)
     ]
+    if selected_numbers is None:
+        return questions
+
+    selected = set(selected_numbers)
+    if len(selected) != len(selected_numbers):
+        raise ValueError("Selected BFI-44 question numbers must be unique")
+    if any(number < 1 or number > len(questions) for number in selected):
+        raise ValueError("Selected BFI-44 question number is out of range")
+
+    filtered = [question for question in questions if question["number"] in selected]
+    for display_number, question in enumerate(filtered, start=1):
+        question["display_number"] = display_number
+    return filtered
