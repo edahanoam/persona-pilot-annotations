@@ -10,7 +10,13 @@ from storage import (
     load_completed_question_ids,
     save_response,
 )
-from twin2k import assign_persona, bfi44_questions, load_twin_personas
+from twin2k import (
+    PersonaCondition,
+    TwinPersona,
+    assign_persona_rounds,
+    bfi44_questions,
+    load_twin_personas,
+)
 
 
 st.set_page_config(
@@ -48,6 +54,17 @@ def show_answering_instruction(*, green: bool = False) -> None:
         st.info(message)
 
 
+def show_persona_definition(
+    persona: TwinPersona, condition: PersonaCondition
+) -> None:
+    if condition in ("demographics", "combined"):
+        st.markdown("**Demographics**")
+        st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
+    if condition in ("qualitative", "combined"):
+        st.markdown("**How this person described themselves**")
+        st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
+
+
 @st.cache_resource
 def get_twin_personas() -> list[dict[str, str]]:
     return list(load_twin_personas())
@@ -65,51 +82,86 @@ def show_twin2k() -> None:
         st.error(f"The Twin-2K personas could not be loaded: {exc}")
         st.stop()
 
-    persona, sampling_strategy = assign_persona(
+    rounds, sampling_strategy = assign_persona_rounds(
         st.session_state.participant_id, personas  # type: ignore[arg-type]
     )
     questions = bfi44_questions()
-    try:
-        completed = load_completed_question_ids(
-            st.session_state.participant_id,
-            experiment="twin2k",
-            persona_id=persona["persona_id"],
-        )
-    except StorageError as exc:
-        st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
-        st.stop()
-
-    if completed and st.session_state.stage != "complete":
-        st.session_state.stage = "bfi44"
 
     if st.session_state.stage == "welcome":
         st.subheader("Welcome")
         st.write(
-            "You will first read a persona description and then answer personality "
-            "questions from that person's point of view."
+            "You will meet three different personas. For each one, read the "
+            "information provided and answer the personality questions from that "
+            "person's point of view."
         )
         if st.button("Begin", type="primary", use_container_width=True):
-            st.session_state.stage = "demographics"
+            st.session_state.stage = "persona_intro"
             st.rerun()
         return
 
-    unanswered = [question for question in questions if question["id"] not in completed]
-    if not unanswered:
+    completed_by_round: list[set[str]] = []
+    try:
+        for round_ in rounds:
+            completed_by_round.append(
+                load_completed_question_ids(
+                    st.session_state.participant_id,
+                    experiment="twin2k",
+                    persona_id=round_["persona"]["persona_id"],
+                )
+            )
+    except StorageError as exc:
+        st.error(f"Your saved progress could not be loaded. Please try again. ({exc})")
+        st.stop()
+
+    active_round_index = next(
+        (
+            index
+            for index, completed in enumerate(completed_by_round)
+            if len(completed) < len(questions)
+        ),
+        None,
+    )
+    if active_round_index is None:
         st.session_state.stage = "complete"
-        st.success("Thank you — you have completed all 44 questions.")
+        st.success("Thank you — you have completed all three persona rounds.")
         st.write("Your responses have been saved.")
         if st.button("Start a new response session", use_container_width=True):
             restart()
         return
 
+    active_round = rounds[active_round_index]
+    persona = active_round["persona"]
+    condition = active_round["condition"]
+    completed = completed_by_round[active_round_index]
+    expected_question_stage = f"twin_questions_{active_round_index}"
+
+    if st.session_state.stage != expected_question_stage:
+        st.progress(
+            active_round_index / len(rounds),
+            text=f"Persona {active_round_index + 1} of {len(rounds)}",
+        )
+        st.subheader(f"Meet persona {active_round_index + 1}")
+        st.info(
+            "This is a new person. Read this persona definition carefully before "
+            "continuing. Your answers should describe this person only."
+        )
+        show_persona_definition(persona, condition)
+        if st.button(
+            "I understand — begin questions",
+            type="primary",
+            use_container_width=True,
+        ):
+            st.session_state.stage = expected_question_stage
+            st.rerun()
+        return
+
+    unanswered = [question for question in questions if question["id"] not in completed]
+
     # Keep the persona visible beside the complete questionnaire so participants
     # can refer to it without opening an expander or moving between pages.
     with st.sidebar:
-        st.header("Persona")
-        st.markdown("**Demographics**")
-        st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**How this person described themselves**")
-        st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
+        st.header(f"Persona {active_round_index + 1} of {len(rounds)}")
+        show_persona_definition(persona, condition)
 
     st.subheader("Questions")
     st.progress(
@@ -161,15 +213,20 @@ def show_twin2k() -> None:
                         participant_id=st.session_state.participant_id,
                         question=question,  # type: ignore[arg-type]
                         answer=str(answers[str(question["id"])]),
-                        sequence=int(question["number"]),
+                        sequence=(active_round_index * len(questions))
+                        + int(question["number"]),
                         experiment="twin2k",
                         persona_id=persona["persona_id"],
                         sampling_strategy=sampling_strategy,
+                        assignment_id=(
+                            f"persona-{active_round_index + 1}-{condition}"
+                        ),
                         choices=[choices[value] for value in choices],  # type: ignore[index]
                     )
             except (OSError, StorageError) as exc:
                 st.error(f"Your answers could not all be saved. Please try again. ({exc})")
             else:
+                st.session_state.stage = "persona_intro"
                 st.rerun()
 
 

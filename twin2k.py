@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import TypedDict
+from typing import Literal, TypedDict
 
 from create_short_personas import (
     DATASET_CONFIG,
@@ -22,6 +22,14 @@ class TwinPersona(TypedDict):
     demographics: str
     qualitative: str
     combined: str
+
+
+PersonaCondition = Literal["demographics", "combined", "qualitative"]
+
+
+class PersonaRound(TypedDict):
+    persona: TwinPersona
+    condition: PersonaCondition
 
 
 def _qualitative_from_combined(demographics: str, combined: str) -> str:
@@ -128,6 +136,30 @@ def assign_persona(
 ) -> tuple[TwinPersona, str]:
     policy = sampler or StableHashSampler()
     return personas[policy.choose_index(participant_id, len(personas))], policy.name
+
+
+def assign_persona_rounds(
+    participant_id: str,
+    personas: list[TwinPersona],
+    sampler: Sampler | None = None,
+) -> tuple[list[PersonaRound], str]:
+    """Assign three distinct personas and a stable randomized condition order."""
+    policy = sampler or StableHashSampler()
+    persona_indices = policy.choose_indices(participant_id, len(personas), 3)
+    conditions: list[PersonaCondition] = [
+        "demographics",
+        "combined",
+        "qualitative",
+    ]
+    condition_indices = policy.choose_indices(f"{participant_id}:conditions", 3, 3)
+    rounds = [
+        {
+            "persona": personas[persona_index],
+            "condition": conditions[condition_index],
+        }
+        for persona_index, condition_index in zip(persona_indices, condition_indices)
+    ]
+    return rounds, policy.name
 
 
 def bfi44_questions() -> list[dict[str, object]]:
