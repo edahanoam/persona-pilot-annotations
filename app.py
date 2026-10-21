@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 from opinionqa import assign_opinion_questions, load_opinion_assignments
@@ -91,26 +93,23 @@ def show_twin2k() -> None:
 
     if st.session_state.stage == "welcome":
         st.subheader("Instructions")
-        st.write(
+        st.markdown(
             "This study has three rounds. In each round, you will be introduced "
-            "to a new persona—a description of a different person."
+            "to a new person through a persona description containing personal "
+            "details about them. You will then be presented with a set of questions. "
+            "Please answer each question *as you think this person would answer it*."
+        )
+        st.write(
+            "You will be clearly notified when each new persona and round begins."
         )
         st.info(
-            "When the questions begin, the persona description will remain visible "
-            "on the left and the questions will appear on the right."
+            "When the questions begin, the persona will be presented on the left "
+            "and the questions will appear on the right, as shown in the example below."
         )
-        st.markdown(
-            """
-            For each round:
-
-            1. Read the new persona description carefully.
-            2. Answer every question as you think that person would answer it.
-            3. Do not answer based on your own personality or opinions.
-            4. Submit your answers after completing all the questions in the round.
-            """
-        )
-        st.write(
-            "You will be clearly notified whenever a new persona and a new round begin."
+        st.image(
+            str(Path(__file__).with_name("screenshot.png")),
+            caption="Example questionnaire layout",
+            use_container_width=True,
         )
         if st.button(
             "Continue to the first persona",
