@@ -90,13 +90,33 @@ def show_twin2k() -> None:
     required_question_ids = {str(question["id"]) for question in questions}
 
     if st.session_state.stage == "welcome":
-        st.subheader("Welcome")
+        st.subheader("Instructions")
         st.write(
-            "You will meet three different personas. For each one, read the "
-            "information provided and answer the personality questions from that "
-            "person's point of view."
+            "This study has three rounds. In each round, you will be introduced "
+            "to a new persona—a description of a different person."
         )
-        if st.button("Begin", type="primary", use_container_width=True):
+        st.info(
+            "When the questions begin, the persona description will remain visible "
+            "on the left and the questions will appear on the right."
+        )
+        st.markdown(
+            """
+            For each round:
+
+            1. Read the new persona description carefully.
+            2. Answer every question as you think that person would answer it.
+            3. Do not answer based on your own personality or opinions.
+            4. Submit your answers after completing all the questions in the round.
+            """
+        )
+        st.write(
+            "You will be clearly notified whenever a new persona and a new round begin."
+        )
+        if st.button(
+            "Continue to the first persona",
+            type="primary",
+            use_container_width=True,
+        ):
             st.session_state.stage = "persona_intro"
             st.rerun()
         return
