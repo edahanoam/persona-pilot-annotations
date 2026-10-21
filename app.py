@@ -16,7 +16,7 @@ from twin2k import assign_persona, bfi44_questions, load_twin_personas
 st.set_page_config(
     page_title="Persona Pilot Annotations",
     page_icon="📝",
-    layout="centered",
+    layout="wide",
 )
 
 
@@ -93,18 +93,6 @@ def show_twin2k() -> None:
             st.rerun()
         return
 
-    if st.session_state.stage in ("demographics", "qualitative"):
-        st.progress(0.0, text="Persona information")
-        st.subheader("Persona")
-        st.markdown("**Demographics**")
-        st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**This person answered these three questions about themselves**")
-        st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
-        if st.button("Begin answering", type="primary", use_container_width=True):
-            st.session_state.stage = "bfi44"
-            st.rerun()
-        return
-
     unanswered = [question for question in questions if question["id"] not in completed]
     if not unanswered:
         st.session_state.stage = "complete"
@@ -114,48 +102,73 @@ def show_twin2k() -> None:
             restart()
         return
 
-    question = unanswered[0]
-    position = len(completed) + 1
-    st.progress(position / len(questions), text=f"Question {position} of {len(questions)}")
-    show_answering_instruction(green=True)
-    with st.expander("Review the full persona", expanded=position == 1):
+    # Keep the persona visible beside the complete questionnaire so participants
+    # can refer to it without opening an expander or moving between pages.
+    with st.sidebar:
+        st.header("Persona")
         st.markdown("**Demographics**")
         st.markdown(demographics_box(persona["demographics"]), unsafe_allow_html=True)
-        st.markdown("**This person answered these three questions about themselves**")
+        st.markdown("**How this person described themselves**")
         st.markdown(qualitative_box(persona["qualitative"]), unsafe_allow_html=True)
-    st.markdown("**I see myself as someone who…**")
-    item = str(question["question"])
-    st.write(item[0].lower() + item[1:])
 
-    choices = question["choices"]
-    with st.form(f"response-{question['id']}", clear_on_submit=True):
-        answer = st.radio(
-            "Your answer",
-            options=list(choices),  # type: ignore[arg-type]
-            format_func=lambda value: f"{value} — {choices[value]}",  # type: ignore[index]
-            index=None,
-        )
+    st.subheader("Questions")
+    st.progress(
+        len(completed) / len(questions),
+        text=f"{len(completed)} of {len(questions)} answers saved",
+    )
+    show_answering_instruction(green=True)
+    st.caption("Answer every question, then submit the complete questionnaire once.")
+
+    answers: dict[str, object] = {}
+    with st.form("twin2k-questionnaire"):
+        for question in unanswered:
+            number = int(question["number"])
+            item = str(question["question"])
+            choices = question["choices"]
+            st.markdown(f"**{number}. I see myself as someone who…**")
+            st.write(item[0].lower() + item[1:])
+            answers[str(question["id"])] = st.radio(
+                f"Answer for question {number}",
+                options=list(choices),  # type: ignore[arg-type]
+                format_func=lambda value, labels=choices: f"{value} — {labels[value]}",  # type: ignore[index]
+                index=None,
+                key=f"answer-{question['id']}",
+                label_visibility="collapsed",
+            )
+            st.divider()
+
         submitted = st.form_submit_button(
-            "Submit answer", type="primary", use_container_width=True
+            "Submit all answers", type="primary", use_container_width=True
         )
 
     if submitted:
-        if answer is None:
-            st.warning("Please select an answer before submitting.")
+        missing = [
+            int(question["number"])
+            for question in unanswered
+            if answers[str(question["id"])] is None
+        ]
+        if missing:
+            missing_text = ", ".join(str(number) for number in missing)
+            st.warning(
+                "Please answer every question before submitting. "
+                f"Missing: {missing_text}."
+            )
         else:
             try:
-                save_response(
-                    participant_id=st.session_state.participant_id,
-                    question=question,  # type: ignore[arg-type]
-                    answer=str(answer),
-                    sequence=position,
-                    experiment="twin2k",
-                    persona_id=persona["persona_id"],
-                    sampling_strategy=sampling_strategy,
-                    choices=[choices[value] for value in choices],  # type: ignore[index]
-                )
+                for question in unanswered:
+                    choices = question["choices"]
+                    save_response(
+                        participant_id=st.session_state.participant_id,
+                        question=question,  # type: ignore[arg-type]
+                        answer=str(answers[str(question["id"])]),
+                        sequence=int(question["number"]),
+                        experiment="twin2k",
+                        persona_id=persona["persona_id"],
+                        sampling_strategy=sampling_strategy,
+                        choices=[choices[value] for value in choices],  # type: ignore[index]
+                    )
             except (OSError, StorageError) as exc:
-                st.error(f"Your answer could not be saved. Please try again. ({exc})")
+                st.error(f"Your answers could not all be saved. Please try again. ({exc})")
             else:
                 st.rerun()
 
