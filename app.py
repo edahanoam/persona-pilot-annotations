@@ -94,10 +94,10 @@ def show_twin2k() -> None:
     if st.session_state.stage == "welcome":
         st.subheader("Instructions")
         st.markdown(
-            "This study has three rounds. In each round, you will be introduced "
-            "to a new person through a persona description containing personal "
-            "details about them. You will then be presented with a set of questions. "
-            "Please answer each question *as you think this person would answer it*."
+            "In this study, you will answer questions from the perspective of three "
+            "different people. Before each set of questions, you will receive a new "
+            "persona description containing personal details about that person. "
+            "Please answer each question *as you think that person would answer it*."
         )
         st.write(
             "You will be clearly notified when each new persona and round begins."
@@ -106,11 +106,13 @@ def show_twin2k() -> None:
             "When the questions begin, the persona will be presented on the left "
             "and the questions will appear on the right, as shown in the example below."
         )
-        st.image(
-            str(Path(__file__).with_name("screenshot.png")),
-            caption="Example questionnaire layout",
-            use_container_width=True,
-        )
+        image_column = st.columns([1, 1, 1])[1]
+        with image_column:
+            st.image(
+                str(Path(__file__).with_name("screenshot.png")),
+                caption="Example questionnaire layout",
+                use_container_width=True,
+            )
         if st.button(
             "Continue to the first persona",
             type="primary",
