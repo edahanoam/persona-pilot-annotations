@@ -16,7 +16,9 @@ import argparse
 import csv
 import hashlib
 import json
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
@@ -219,6 +221,7 @@ def run_matched_inference(
     provider_models: list[tuple[str, str]],
     output_csv: Path,
     answer_factory: Callable[[str, str], Callable[[str], str]] = make_answer_function,
+    max_workers: int | None = None,
 ) -> int:
     persona_lookup = {persona["persona_id"]: persona for persona in personas}
     missing_personas = sorted(
@@ -233,14 +236,16 @@ def run_matched_inference(
     write_header = not output_csv.exists() or output_csv.stat().st_size == 0
     questions = bfi44_questions(PILOT_BFI44_NUMBERS)
     generated = 0
+    write_lock = threading.Lock()
 
     with output_csv.open("a", encoding="utf-8", newline="") as destination:
         writer = csv.DictWriter(destination, fieldnames=OUTPUT_COLUMNS)
         if write_header:
             writer.writeheader()
 
-        for provider, model in provider_models:
+        def run_provider_model(provider: str, model: str) -> int:
             answer_question = answer_factory(provider, model)
+            model_generated = 0
             for position, assignment in enumerate(assignments, start=1):
                 key = (
                     assignment["participant_id"],
@@ -267,32 +272,46 @@ def run_matched_inference(
                     ),
                 )
                 persona_hash = hashlib.sha256(persona_text.encode("utf-8")).hexdigest()
-                for question, answer in zip(questions, answers):
-                    writer.writerow(
-                        {
-                            "annotation_participant_id": assignment["participant_id"],
-                            "persona_id": assignment["persona_id"],
-                            "condition": condition,
-                            "assignment_id": assignment["assignment_id"],
-                            "question_id": question["id"],
-                            "question_number": question["number"],
-                            "display_number": question["display_number"],
-                            "question": question["question"],
-                            "answer_value": answer,
-                            "answer_text": ANSWER_LABELS[answer],
-                            "provider": provider,
-                            "model": model,
-                            "persona_text": persona_text,
-                            "persona_text_sha256": persona_hash,
-                        }
-                    )
-                destination.flush()
-                generated += len(answers)
-                done.add(key)
+                rows = [
+                    {
+                        "annotation_participant_id": assignment["participant_id"],
+                        "persona_id": assignment["persona_id"],
+                        "condition": condition,
+                        "assignment_id": assignment["assignment_id"],
+                        "question_id": question["id"],
+                        "question_number": question["number"],
+                        "display_number": question["display_number"],
+                        "question": question["question"],
+                        "answer_value": answer,
+                        "answer_text": ANSWER_LABELS[answer],
+                        "provider": provider,
+                        "model": model,
+                        "persona_text": persona_text,
+                        "persona_text_sha256": persona_hash,
+                    }
+                    for question, answer in zip(questions, answers)
+                ]
+                # A complete 20-row assignment is written as one synchronized block.
+                with write_lock:
+                    writer.writerows(rows)
+                    destination.flush()
+                model_generated += len(answers)
                 print(
                     f"Completed {provider}/{model} assignment "
                     f"{position}/{len(assignments)}"
                 )
+            return model_generated
+
+        unique_provider_models = list(dict.fromkeys(provider_models))
+        worker_count = max_workers or len(unique_provider_models)
+        worker_count = max(1, min(worker_count, len(unique_provider_models)))
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            futures = [
+                executor.submit(run_provider_model, provider, model)
+                for provider, model in unique_provider_models
+            ]
+            for future in futures:
+                generated += future.result()
     return generated
 
 
@@ -317,9 +336,20 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         type=Path,
         default=Path("evaluations/pilot_models/model_responses.csv"),
     )
+    parser.add_argument(
+        "--max-workers",
+        type=int,
+        help=(
+            "Maximum provider/model pipelines to run in parallel. By default, all "
+            "requested models run concurrently. Each model handles its assignments "
+            "sequentially."
+        ),
+    )
     args = parser.parse_args(argv)
     if not args.openai_model and not args.gemini_model:
         parser.error("Specify at least one --openai-model or --gemini-model")
+    if args.max_workers is not None and args.max_workers < 1:
+        parser.error("--max-workers must be at least 1")
     return args
 
 
@@ -334,7 +364,11 @@ def main() -> None:
         *(("gemini", model) for model in args.gemini_model),
     ]
     generated = run_matched_inference(
-        assignments, personas, provider_models, args.output
+        assignments,
+        personas,
+        provider_models,
+        args.output,
+        max_workers=args.max_workers,
     )
     print(f"Generated {generated} new answers in {args.output.resolve()}")
 
