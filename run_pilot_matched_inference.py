@@ -61,30 +61,47 @@ def persona_text_for_condition(
     return f"{persona['demographics'].strip()}\n\n{persona['qualitative'].strip()}"
 
 
-def build_batch_prompt(persona_text: str) -> str:
+def build_batch_prompt(
+    persona_text: str, condition: PersonaCondition | None = None
+) -> str:
+    """Reproduce the participant-facing questionnaire language for a model."""
     questions = bfi44_questions(PILOT_BFI44_NUMBERS)
     statements = "\n".join(
-        f"{question['display_number']}. I see myself as someone who "
+        f"{question['display_number']}. I see myself as someone who…\n"
         f"{str(question['question'])[0].lower() + str(question['question'])[1:]}"
         for question in questions
     )
-    return f"""Answer all 20 questions as if you are the person described below.
-Do not answer as an AI and do not use information beyond the persona description.
+    if condition == "demographics":
+        persona_definition = f"Demographics\n{persona_text}"
+    elif condition == "qualitative":
+        persona_definition = f"Self-description\n{persona_text}"
+    elif condition == "combined":
+        demographics, qualitative = persona_text.split("\n\n", maxsplit=1)
+        persona_definition = (
+            f"Demographics\n{demographics}\n\n"
+            f"Self-description\n{qualitative}"
+        )
+    else:
+        # Kept for callers and tests that supply only the already-rendered text.
+        persona_definition = persona_text
 
-Persona description:
-{persona_text}
+    return f"""This is a new person. Read this persona definition carefully before continuing. Your answers should describe this person only.
 
-For every statement, choose exactly one value:
-1 = Disagree strongly
-2 = Disagree a little
-3 = Neither agree nor disagree
-4 = Agree a little
-5 = Agree strongly
+{persona_definition}
+
+Instructions: Answer each question as you think the person described in the persona would answer. Do not answer as yourself.
+
+For each question, use the same answer choices shown to participants:
+1 — Disagree strongly
+2 — Disagree a little
+3 — Neither agree nor disagree
+4 — Agree a little
+5 — Agree strongly
 
 Statements:
 {statements}
 
-Return only a JSON array of 20 integers in question order, for example:
+Answer every question. For machine-readable recording, return only a JSON array of 20 integers in question order, for example:
 [1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5, 1, 2, 3, 4, 5]"""
 
 
@@ -244,7 +261,10 @@ def run_matched_inference(
                     persona, condition  # type: ignore[arg-type]
                 )
                 answers = answer_batch_with_retries(
-                    answer_question, build_batch_prompt(persona_text)
+                    answer_question,
+                    build_batch_prompt(
+                        persona_text, condition  # type: ignore[arg-type]
+                    ),
                 )
                 persona_hash = hashlib.sha256(persona_text.encode("utf-8")).hexdigest()
                 for question, answer in zip(questions, answers):
