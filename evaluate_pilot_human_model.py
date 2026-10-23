@@ -704,6 +704,19 @@ def main() -> None:
     participant_comparisons.to_csv(
         args.output_dir / "participant_comparisons.csv", index=False
     )
+    participant_comparisons[[
+        "participant_id",
+        "source",
+        "assignments",
+        "human_exact_accuracy",
+        "model_exact_accuracy",
+        "exact_accuracy_winner",
+        "human_within_one_accuracy",
+        "model_within_one_accuracy",
+        "within_one_accuracy_winner",
+    ]].to_csv(
+        args.output_dir / "accuracy_comparison_by_participant.csv", index=False
+    )
     participant_comparisons.loc[
         participant_comparisons["majority_metric_winner"] == "human"
     ].to_csv(args.output_dir / "participants_beating_models.csv", index=False)
