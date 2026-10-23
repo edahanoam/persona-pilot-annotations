@@ -146,6 +146,7 @@ def score_rows(rows: pd.DataFrame, human: pd.DataFrame) -> pd.DataFrame:
     scored["absolute_error"] = scored["error"].abs()
     scored["squared_error"] = scored["error"].pow(2)
     scored["is_match"] = scored["error"].eq(0)
+    scored["is_within_one"] = scored["absolute_error"].le(1)
     return scored
 
 
@@ -164,6 +165,7 @@ def profile_metrics(scored: pd.DataFrame) -> pd.DataFrame:
             {
                 **dict(zip(group_columns, keys)),
                 "profile_exact_accuracy": float(group["is_match"].mean()),
+                "profile_within_one_accuracy": float(group["is_within_one"].mean()),
                 "profile_mae": float(group["absolute_error"].mean()),
                 "profile_rmse": float(np.sqrt(group["squared_error"].mean())),
                 "profile_pearson_r": correlation,
@@ -219,6 +221,7 @@ def make_individual_assignment_comparisons(scored: pd.DataFrame) -> pd.DataFrame
     models = profiles.loc[profiles["agent_type"] == "model"].copy()
     metrics = [
         "profile_exact_accuracy",
+        "profile_within_one_accuracy",
         "profile_mae",
         "profile_rmse",
         "profile_pearson_r",
@@ -236,6 +239,7 @@ def make_individual_assignment_comparisons(scored: pd.DataFrame) -> pd.DataFrame
         compared,
         [
             ("exact_accuracy", "profile_exact_accuracy", True),
+            ("within_one_accuracy", "profile_within_one_accuracy", True),
             ("mae", "profile_mae", False),
             ("rmse", "profile_rmse", False),
             ("correlation", "profile_pearson_r", True),
@@ -247,7 +251,7 @@ def make_participant_comparisons(scored: pd.DataFrame) -> pd.DataFrame:
     summary = metric_summary(
         scored, ["participant_id", "source", "agent_type", "provider", "model"]
     )
-    metrics = ["exact_accuracy", "mae", "rmse", "pearson_r"]
+    metrics = ["exact_accuracy", "within_one_accuracy", "mae", "rmse", "pearson_r"]
     human = summary.loc[summary["agent_type"] == "human_annotator", [
         "participant_id", "profiles", "responses", *metrics
     ]].rename(
@@ -270,6 +274,7 @@ def make_participant_comparisons(scored: pd.DataFrame) -> pd.DataFrame:
         compared,
         [
             ("exact_accuracy", "exact_accuracy", True),
+            ("within_one_accuracy", "within_one_accuracy", True),
             ("mae", "mae", False),
             ("rmse", "rmse", False),
             ("correlation", "pearson_r", True),
@@ -278,6 +283,66 @@ def make_participant_comparisons(scored: pd.DataFrame) -> pd.DataFrame:
         ["source", "metrics_won_by_human", "human_exact_accuracy"],
         ascending=[True, False, False],
     )
+
+
+def _spread_metrics(values: np.ndarray) -> dict[str, float]:
+    if len(values) < 2:
+        return {
+            "mean_pairwise_distance": math.nan,
+            "mean_distance_to_centroid": math.nan,
+            "total_variance": math.nan,
+        }
+    differences = values[:, None, :] - values[None, :, :]
+    distances = np.linalg.norm(differences, axis=2)
+    upper_triangle = distances[np.triu_indices(len(values), k=1)]
+    centroid = values.mean(axis=0)
+    return {
+        "mean_pairwise_distance": float(upper_triangle.mean()),
+        "mean_distance_to_centroid": float(
+            np.linalg.norm(values - centroid, axis=1).mean()
+        ),
+        "total_variance": float(values.var(axis=0, ddof=1).sum()),
+    }
+
+
+def make_response_dispersion_report(
+    aligned: pd.DataFrame, human: pd.DataFrame
+) -> pd.DataFrame:
+    """Measure response-profile collapse in the complete 20-question space."""
+    human = human.copy()
+    human.index = human.index.map(str)
+    rows: list[dict[str, object]] = []
+    for (condition, source), group in aligned.groupby(
+        ["condition", "source"], sort=True
+    ):
+        profiles = group.pivot(
+            index=ASSIGNMENT_COLUMNS,
+            columns="question_number",
+            values="answer_value",
+        ).reindex(columns=PILOT_BFI44_NUMBERS)
+        predicted = profiles.to_numpy(dtype=float)
+        persona_ids = profiles.index.get_level_values("persona_id").map(str)
+        reference = human.loc[list(persona_ids)].to_numpy(dtype=float)
+        predicted_spread = _spread_metrics(predicted)
+        reference_spread = _spread_metrics(reference)
+        row: dict[str, object] = {
+            "condition": condition,
+            "description_type": CONDITION_LABELS.get(condition, condition),
+            "source": source,
+            "agent_type": group["agent_type"].iloc[0],
+            "provider": group["provider"].iloc[0],
+            "model": group["model"].iloc[0],
+            "profiles": len(profiles),
+        }
+        for metric, value in predicted_spread.items():
+            reference_value = reference_spread[metric]
+            ratio = value / reference_value if reference_value > 0 else math.nan
+            row[metric] = value
+            row[f"reference_{metric}"] = reference_value
+            row[f"{metric}_ratio_to_personas"] = ratio
+            row[f"{metric}_collapse_percent"] = (1 - ratio) * 100
+        rows.append(row)
+    return pd.DataFrame(rows)
 
 
 def metric_summary(scored: pd.DataFrame, group_columns: list[str]) -> pd.DataFrame:
@@ -305,6 +370,7 @@ def metric_summary(scored: pd.DataFrame, group_columns: list[str]) -> pd.DataFra
                 "responses": len(group),
                 "matches": int(group["is_match"].sum()),
                 "exact_accuracy": float(group["is_match"].mean()),
+                "within_one_accuracy": float(group["is_within_one"].mean()),
                 "mae": float(group["absolute_error"].mean()),
                 "rmse": float(np.sqrt(group["squared_error"].mean())),
                 "pearson_r": correlation,
@@ -336,6 +402,17 @@ def make_winner_report(agent_summary: pd.DataFrame) -> pd.DataFrame:
                     if human_row["exact_accuracy"] > model_row["exact_accuracy"]
                     else "models"
                     if model_row["exact_accuracy"] > human_row["exact_accuracy"]
+                    else "tie"
+                ),
+                "human_within_one_accuracy": human_row["within_one_accuracy"],
+                "model_within_one_accuracy": model_row["within_one_accuracy"],
+                "within_one_accuracy_winner": (
+                    "human_annotators"
+                    if human_row["within_one_accuracy"]
+                    > model_row["within_one_accuracy"]
+                    else "models"
+                    if model_row["within_one_accuracy"]
+                    > human_row["within_one_accuracy"]
                     else "tie"
                 ),
                 "human_mae": human_row["mae"],
@@ -438,6 +515,40 @@ def run_pca(
         [reference_coordinates, projected_coordinates], ignore_index=True
     )
     coordinates.to_csv(output_dir / "pca_coordinates.csv", index=False)
+    pca_spread_rows: list[dict[str, object]] = []
+    reference_lookup_for_spread = {
+        str(persona_id): reference_xy[index, :2]
+        for index, persona_id in enumerate(human_complete.index)
+    }
+    for (condition, source), group in projected_coordinates.groupby(
+        ["condition", "source"], sort=True
+    ):
+        predicted_spread = _spread_metrics(group[["PC1", "PC2"]].to_numpy(float))
+        target_values = np.array([
+            reference_lookup_for_spread[str(persona_id)]
+            for persona_id in group["persona_id"]
+        ])
+        reference_spread = _spread_metrics(target_values)
+        row: dict[str, object] = {
+            "condition": condition,
+            "description_type": CONDITION_LABELS.get(condition, condition),
+            "source": source,
+            "agent_type": group["agent_type"].iloc[0],
+            "provider": group["provider"].iloc[0],
+            "model": group["model"].iloc[0],
+            "profiles": len(group),
+        }
+        for metric, value in predicted_spread.items():
+            reference_value = reference_spread[metric]
+            ratio = value / reference_value if reference_value > 0 else math.nan
+            row[metric] = value
+            row[f"reference_{metric}"] = reference_value
+            row[f"{metric}_ratio_to_personas"] = ratio
+            row[f"{metric}_collapse_percent"] = (1 - ratio) * 100
+        pca_spread_rows.append(row)
+    pd.DataFrame(pca_spread_rows).to_csv(
+        output_dir / "pca_dispersion_by_condition.csv", index=False
+    )
     pd.DataFrame(
         {
             "component": range(1, len(explained_variance_ratio) + 1),
@@ -573,9 +684,18 @@ def main() -> None:
     source_summary.to_csv(args.output_dir / "metrics_by_condition_source.csv", index=False)
     agent_summary = metric_summary(scored, ["condition", "agent_type"])
     agent_summary.to_csv(args.output_dir / "metrics_by_condition_agent_type.csv", index=False)
-    make_winner_report(agent_summary).to_csv(
-        args.output_dir / "winner_by_condition.csv", index=False
-    )
+    winner_report = make_winner_report(agent_summary)
+    winner_report.to_csv(args.output_dir / "winner_by_condition.csv", index=False)
+    winner_report[[
+        "condition",
+        "description_type",
+        "human_exact_accuracy",
+        "model_exact_accuracy",
+        "exact_accuracy_winner",
+        "human_within_one_accuracy",
+        "model_within_one_accuracy",
+        "within_one_accuracy_winner",
+    ]].to_csv(args.output_dir / "accuracy_comparison_by_condition.csv", index=False)
     assignment_comparisons = make_individual_assignment_comparisons(scored)
     assignment_comparisons.to_csv(
         args.output_dir / "individual_assignment_comparisons.csv", index=False
@@ -587,6 +707,19 @@ def main() -> None:
     participant_comparisons.loc[
         participant_comparisons["majority_metric_winner"] == "human"
     ].to_csv(args.output_dir / "participants_beating_models.csv", index=False)
+    dispersion_report = make_response_dispersion_report(aligned, human)
+    dispersion_report.to_csv(
+        args.output_dir / "response_dispersion_by_condition.csv", index=False
+    )
+    dispersion_report[[
+        "condition",
+        "description_type",
+        "source",
+        "agent_type",
+        "profiles",
+        "mean_pairwise_distance_ratio_to_personas",
+        "mean_pairwise_distance_collapse_percent",
+    ]].to_csv(args.output_dir / "collapse_summary.csv", index=False)
     human_count, projected_count = run_pca(human, aligned, args.output_dir)
 
     print(
