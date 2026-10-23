@@ -153,18 +153,131 @@ def profile_metrics(scored: pd.DataFrame) -> pd.DataFrame:
     group_columns = ["source", "agent_type", "provider", "model", *ASSIGNMENT_COLUMNS]
     rows: list[dict[str, object]] = []
     for keys, group in scored.groupby(group_columns, dropna=False, sort=True):
+        predicted = group["answer_value"].to_numpy(dtype=float)
+        reference = group["reference_answer"].to_numpy(dtype=float)
+        correlation = (
+            float(np.corrcoef(predicted, reference)[0, 1])
+            if np.std(predicted) > 0 and np.std(reference) > 0
+            else math.nan
+        )
         rows.append(
             {
                 **dict(zip(group_columns, keys)),
                 "profile_exact_accuracy": float(group["is_match"].mean()),
                 "profile_mae": float(group["absolute_error"].mean()),
                 "profile_rmse": float(np.sqrt(group["squared_error"].mean())),
+                "profile_pearson_r": correlation,
                 "profile_euclidean_distance": float(
                     np.linalg.norm(group["error"].to_numpy(dtype=float))
                 ),
             }
         )
     return pd.DataFrame(rows)
+
+
+def _winner(human: float, model: float, *, higher_is_better: bool) -> str:
+    if pd.isna(human) or pd.isna(model):
+        return "not_comparable"
+    if human == model:
+        return "tie"
+    human_wins = human > model if higher_is_better else human < model
+    return "human" if human_wins else "model"
+
+
+def _add_comparison_columns(
+    frame: pd.DataFrame, metric_columns: list[tuple[str, str, bool]]
+) -> pd.DataFrame:
+    result = frame.copy()
+    winner_columns: list[str] = []
+    for output_name, metric_name, higher_is_better in metric_columns:
+        winner_column = f"{output_name}_winner"
+        winner_columns.append(winner_column)
+        result[winner_column] = [
+            _winner(human, model, higher_is_better=higher_is_better)
+            for human, model in zip(
+                result[f"human_{metric_name}"], result[f"model_{metric_name}"]
+            )
+        ]
+    result["metrics_won_by_human"] = result[winner_columns].eq("human").sum(axis=1)
+    result["metrics_won_by_model"] = result[winner_columns].eq("model").sum(axis=1)
+    result["metrics_tied"] = result[winner_columns].eq("tie").sum(axis=1)
+    result["majority_metric_winner"] = np.select(
+        [
+            result["metrics_won_by_human"] > result["metrics_won_by_model"],
+            result["metrics_won_by_model"] > result["metrics_won_by_human"],
+        ],
+        ["human", "model"],
+        default="tie",
+    )
+    result["human_beat_model_on_any_metric"] = result["metrics_won_by_human"] > 0
+    return result
+
+
+def make_individual_assignment_comparisons(scored: pd.DataFrame) -> pd.DataFrame:
+    profiles = profile_metrics(scored)
+    human = profiles.loc[profiles["agent_type"] == "human_annotator"].copy()
+    models = profiles.loc[profiles["agent_type"] == "model"].copy()
+    metrics = [
+        "profile_exact_accuracy",
+        "profile_mae",
+        "profile_rmse",
+        "profile_pearson_r",
+    ]
+    human = human[[*ASSIGNMENT_COLUMNS, *metrics]].rename(
+        columns={metric: f"human_{metric}" for metric in metrics}
+    )
+    models = models[
+        [*ASSIGNMENT_COLUMNS, "source", "provider", "model", *metrics]
+    ].rename(columns={metric: f"model_{metric}" for metric in metrics})
+    compared = human.merge(
+        models, on=ASSIGNMENT_COLUMNS, how="inner", validate="one_to_many"
+    )
+    return _add_comparison_columns(
+        compared,
+        [
+            ("exact_accuracy", "profile_exact_accuracy", True),
+            ("mae", "profile_mae", False),
+            ("rmse", "profile_rmse", False),
+            ("correlation", "profile_pearson_r", True),
+        ],
+    ).sort_values(["source", "participant_id", "condition"])
+
+
+def make_participant_comparisons(scored: pd.DataFrame) -> pd.DataFrame:
+    summary = metric_summary(
+        scored, ["participant_id", "source", "agent_type", "provider", "model"]
+    )
+    metrics = ["exact_accuracy", "mae", "rmse", "pearson_r"]
+    human = summary.loc[summary["agent_type"] == "human_annotator", [
+        "participant_id", "profiles", "responses", *metrics
+    ]].rename(
+        columns={
+            "profiles": "assignments",
+            "responses": "human_responses",
+            **{metric: f"human_{metric}" for metric in metrics},
+        }
+    )
+    models = summary.loc[summary["agent_type"] == "model", [
+        "participant_id", "source", "provider", "model", "responses", *metrics
+    ]].rename(
+        columns={
+            "responses": "model_responses",
+            **{metric: f"model_{metric}" for metric in metrics},
+        }
+    )
+    compared = human.merge(models, on="participant_id", how="inner", validate="one_to_many")
+    return _add_comparison_columns(
+        compared,
+        [
+            ("exact_accuracy", "exact_accuracy", True),
+            ("mae", "mae", False),
+            ("rmse", "rmse", False),
+            ("correlation", "pearson_r", True),
+        ],
+    ).sort_values(
+        ["source", "metrics_won_by_human", "human_exact_accuracy"],
+        ascending=[True, False, False],
+    )
 
 
 def metric_summary(scored: pd.DataFrame, group_columns: list[str]) -> pd.DataFrame:
@@ -260,9 +373,24 @@ def make_winner_report(agent_summary: pd.DataFrame) -> pd.DataFrame:
 def run_pca(
     human: pd.DataFrame, aligned: pd.DataFrame, output_dir: Path
 ) -> tuple[int, int]:
-    human_complete = human.dropna()
+    human = human.copy()
+    human.index = human.index.map(str)
+    participating_personas = sorted(
+        {str(persona_id) for persona_id in aligned["persona_id"].unique()}
+    )
+    missing_personas = sorted(set(participating_personas) - set(human.index.astype(str)))
+    if missing_personas:
+        raise ValueError(
+            "Human reference profiles were not found for participating personas: "
+            f"{missing_personas}"
+        )
+    # Define the PCA space only from original answers belonging to personas that
+    # actually appeared in this pilot. Unused Twin-2K personas cannot influence it.
+    human_complete = human.loc[participating_personas].dropna()
     if len(human_complete) < 2:
-        raise ValueError("At least two complete human reference profiles are required")
+        raise ValueError(
+            "At least two complete participating human-reference profiles are required"
+        )
     profile_index = [
         "source",
         "agent_type",
@@ -326,50 +454,79 @@ def run_pca(
     import matplotlib.pyplot as plt
 
     conditions = ["demographics", "combined", "qualitative"]
-    sources = list(projected_coordinates["source"].drop_duplicates())
-    palette = ["#1d4ed8", "#dc2626", "#16a34a", "#9333ea", "#ea580c"]
-    source_colors = {source: palette[index % len(palette)] for index, source in enumerate(sources)}
-    figure, axes = plt.subplots(1, 3, figsize=(18, 6), sharex=True, sharey=True)
+    model_sources = list(
+        projected_coordinates.loc[
+            projected_coordinates["agent_type"] == "model", "source"
+        ].drop_duplicates()
+    )
+    palette = ["#dc2626", "#16a34a", "#9333ea", "#ea580c", "#0891b2"]
+    model_colors = {
+        source: palette[index % len(palette)]
+        for index, source in enumerate(model_sources)
+    }
+    figure, axes = plt.subplots(
+        3, 2, figsize=(13, 15), sharex=True, sharey=True, squeeze=False
+    )
     reference_lookup = {
         persona_id: reference_xy[index, :2]
         for index, persona_id in enumerate(human_complete.index)
     }
-    for axis, condition in zip(axes, conditions):
-        axis.scatter(
-            reference_xy[:, 0], reference_xy[:, 1], s=13, alpha=0.16,
-            color="#6b7280", label="Human reference",
-        )
+    for row_index, condition in enumerate(conditions):
         condition_rows = projected_coordinates.loc[
             projected_coordinates["condition"] == condition
         ]
-        for source in sources:
-            source_rows = condition_rows.loc[condition_rows["source"] == source]
-            if source_rows.empty:
-                continue
-            marker = "o" if source == "Human annotators" else "^"
-            color = source_colors[source]
-            for row in source_rows.itertuples(index=False):
-                target = reference_lookup.get(str(row.persona_id))
-                if target is not None:
+        condition_personas = sorted(
+            {str(persona_id) for persona_id in condition_rows["persona_id"]}
+        )
+        anchors = np.array([reference_lookup[persona_id] for persona_id in condition_personas])
+
+        for column_index, agent_type in enumerate(["human_annotator", "model"]):
+            axis = axes[row_index, column_index]
+            axis.scatter(
+                anchors[:, 0], anchors[:, 1],
+                s=62, alpha=0.9, color="#111827", marker="x",
+                linewidths=1.7, label="Original persona",
+            )
+            panel_rows = condition_rows.loc[
+                condition_rows["agent_type"] == agent_type
+            ]
+            panel_sources = (
+                ["Human annotators"] if agent_type == "human_annotator"
+                else model_sources
+            )
+            for source in panel_sources:
+                source_rows = panel_rows.loc[panel_rows["source"] == source]
+                if source_rows.empty:
+                    continue
+                color = "#2563eb" if agent_type == "human_annotator" else model_colors[source]
+                marker = "o" if agent_type == "human_annotator" else "^"
+                for row in source_rows.itertuples(index=False):
+                    target = reference_lookup[str(row.persona_id)]
                     axis.plot(
                         [target[0], row.PC1], [target[1], row.PC2],
-                        color=color, alpha=0.12, linewidth=0.7,
+                        color=color, alpha=0.18, linewidth=0.8, zorder=1,
                     )
-            axis.scatter(
-                source_rows["PC1"], source_rows["PC2"], s=48,
-                alpha=0.82, color=color, marker=marker, label=source,
+                axis.scatter(
+                    source_rows["PC1"], source_rows["PC2"],
+                    s=42, alpha=0.82, color=color, marker=marker,
+                    label=source, zorder=2,
+                )
+            axis.axhline(0, color="#d1d5db", linewidth=0.6, zorder=0)
+            axis.axvline(0, color="#d1d5db", linewidth=0.6, zorder=0)
+            axis.grid(color="#e5e7eb", linewidth=0.45, alpha=0.65)
+            axis.set_title(
+                f"{CONDITION_LABELS.get(condition, condition)} — "
+                f"{'humans' if agent_type == 'human_annotator' else 'models'}"
             )
-        axis.set_title(CONDITION_LABELS.get(condition, condition))
-        axis.axhline(0, color="#9ca3af", linewidth=0.6)
-        axis.axvline(0, color="#9ca3af", linewidth=0.6)
+            axis.legend(loc="best", frameon=False, fontsize=8)
     pc1 = explained_variance_ratio[0] * 100
     pc2 = explained_variance_ratio[1] * 100
-    figure.supxlabel(f"Human-reference PCA component 1 ({pc1:.1f}% variance)")
-    figure.supylabel(f"Human-reference PCA component 2 ({pc2:.1f}% variance)")
-    figure.suptitle("Annotator and model profiles in 20-item human PCA space")
-    handles, labels = axes[0].get_legend_handles_labels()
-    figure.legend(handles, labels, loc="upper center", ncol=max(2, len(labels)), frameon=False)
-    figure.tight_layout(rect=(0, 0, 1, 0.90))
+    figure.supxlabel(f"Participating-persona PC1 ({pc1:.1f}% variance)")
+    figure.supylabel(f"Participating-persona PC2 ({pc2:.1f}% variance)")
+    figure.suptitle(
+        "Responses mapped onto PCA of the participating personas' original answers"
+    )
+    figure.tight_layout(rect=(0.03, 0.03, 1, 0.97))
     figure.savefig(output_dir / "pca_human_model_by_condition.png", dpi=200)
     plt.close(figure)
     return len(human_complete), len(profiles)
@@ -419,6 +576,17 @@ def main() -> None:
     make_winner_report(agent_summary).to_csv(
         args.output_dir / "winner_by_condition.csv", index=False
     )
+    assignment_comparisons = make_individual_assignment_comparisons(scored)
+    assignment_comparisons.to_csv(
+        args.output_dir / "individual_assignment_comparisons.csv", index=False
+    )
+    participant_comparisons = make_participant_comparisons(scored)
+    participant_comparisons.to_csv(
+        args.output_dir / "participant_comparisons.csv", index=False
+    )
+    participant_comparisons.loc[
+        participant_comparisons["majority_metric_winner"] == "human"
+    ].to_csv(args.output_dir / "participants_beating_models.csv", index=False)
     human_count, projected_count = run_pca(human, aligned, args.output_dir)
 
     print(
